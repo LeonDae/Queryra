@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: queryra
+      POSTGRES_USER: queryra_owner
+      POSTGRES_PASSWORD: ${QUERYRA_POSTGRES_PASSWORD:-queryra_dev_only_change_me}
+    ports:
+      - "127.0.0.1:${QUERYRA_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - queryra-postgres-data:/var/lib/postgresql/data
+      - ./db/init-local-roles.sql:/docker-entrypoint-initdb.d/10-queryra-roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U queryra_owner -d queryra"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_READER_URL: ${DATABASE_READER_URL:-postgresql://queryra_reader:queryra_reader_dev@postgres:5432/queryra}
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL:-postgresql://queryra_ingest:queryra_ingest_dev@postgres:5432/queryra}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-models/gemini-2.5-flash}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-5000}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      MAX_RESULT_BYTES: ${MAX_RESULT_BYTES:-2000000}
+      GEMINI_REQUESTS_PER_MINUTE: ${GEMINI_REQUESTS_PER_MINUTE:-20}
+      OLLAMA_REQUESTS_PER_MINUTE: ${OLLAMA_REQUESTS_PER_MINUTE:-20}
+      PROVIDER_CONCURRENCY: ${PROVIDER_CONCURRENCY:-2}
+      CSV_UPLOADS_PER_10_MINUTES: ${CSV_UPLOADS_PER_10_MINUTES:-3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${QUERYRA_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/SQG/content/v1/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  queryra-postgres-data:

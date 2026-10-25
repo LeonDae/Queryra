@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+npm-debug.log*
+coverage
+dist
+out
+docs
+test
+README.md
+queryra_architectural_refinement.md
