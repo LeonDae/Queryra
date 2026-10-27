@@ -1,0 +1,38 @@
+{
+  "name": "queryra-cli",
+  "version": "0.1.0",
+  "description": "Queryra CLI turns natural-language questions into safe, read-only SQL over local CSV files with Gemini and DuckDB.",
+  "keywords": [
+    "csv",
+    "duckdb",
+    "gemini",
+    "natural-language",
+    "sql"
+  ],
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LeonDae/Queryra.git",
+    "directory": "cli"
+  },
+  "homepage": "https://github.com/LeonDae/Queryra/tree/main/cli#readme",
+  "bugs": {
+    "url": "https://github.com/LeonDae/Queryra/issues"
+  },
+  "license": "MIT",
+  "bin": {
+    "queryra": "./bin/queryra.js"
+  },
+  "engines": {
+    "node": ">=20.9"
+  },
+  "files": [
+    "LICENSE.md",
+    "bin/",
+    "*.js"
+  ],
+  "dependencies": {
+    "@duckdb/node-api": "1.5.6-r.2",
+    "pgsql-ast-parser": "12.0.2"
+  }
+}
