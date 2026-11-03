@@ -1,6 +1,7 @@
 node_modules/
 .next/
 out/
-.env
-.env.local
+# Environment files can contain credentials. Keep the safe template tracked.
+.env*
+!.env.example
 npm-debug.log*

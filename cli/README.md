@@ -39,7 +39,7 @@ queryra init
 
 Enter the key at the hidden prompt. It is saved in your user-local configuration, outside your project: `%APPDATA%\Queryra\config.json` on Windows, or `$XDG_CONFIG_HOME/queryra/config.json` (default `~/.config/queryra/config.json`) on Unix. The CLI restricts Unix config permissions to user-only access. On Windows the file uses the current user's AppData permissions.
 
-`init` checks the current directory for readable CSV files but does not call Gemini. Press Enter at the key prompt to skip and configure it later with `queryra config --replace-key`, or set `QUERYRA_GEMINI_API_KEY` in your environment. The environment variable overrides the saved key. `QUERYRA_GEMINI_MODEL` optionally selects a model; default is `models/gemini-2.5-flash`.
+`init` validates the entered, saved, or environment-provided key with a small Gemini request before reporting setup complete. A newly entered key is saved only after validation succeeds. Press Enter at the key prompt to skip and configure it later with `queryra config --replace-key`, or set `QUERYRA_GEMINI_API_KEY` in your environment. The environment variable overrides the saved key. `QUERYRA_GEMINI_MODEL` optionally selects a model; default is `models/gemini-2.5-flash`. Gemini errors include a category, HTTP status when available, a sanitized provider message, and a recommended next step.
 
 Never put a real key in a CSV, source file, command-line argument, or project repository. The CLI does not print the key. Check configuration without revealing it with:
 

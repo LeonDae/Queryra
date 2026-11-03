@@ -10,6 +10,7 @@ import { promptLine, promptSecret } from "../prompt.js";
 import { formatJsonResult, formatTable } from "../presentation.js";
 import { CLI_DEFAULT_RESULT_LIMIT, parseResultLimit } from "../sql-safety.js";
 import { CliError } from "../errors.js";
+import { validateGeminiConnection } from "../gemini.js";
 import { writeError, writeHeader, writeStatus, writeSuccess, writeWarning } from "../terminal.js";
 import path from "node:path";
 
@@ -37,6 +38,7 @@ async function init() {
   const envKey = process.env.QUERYRA_GEMINI_API_KEY;
   let savedKey = config.geminiApiKey || "";
   let replaceKey = false;
+  let keyValidated = false;
   if (envKey) writeSuccess("Gemini API key is available from QUERYRA_GEMINI_API_KEY; it overrides the saved key.");
   else if (!savedKey) {
     const entered = process.stdin.isTTY
@@ -50,9 +52,20 @@ async function init() {
       if (entered) { savedKey = entered; replaceKey = true; }
     }
   }
-  if (replaceKey) await writeConfig({ geminiApiKey: savedKey });
+  if (replaceKey) {
+    writeStatus("Validating Gemini API key");
+    await validateGeminiConnection({ apiKey: savedKey });
+    keyValidated = true;
+    await writeConfig({ geminiApiKey: savedKey });
+  }
   const keyConfigured = Boolean(envKey || savedKey);
-  if (keyConfigured) writeSuccess("Gemini API key is configured. init does not call Gemini; run an ask command to test it.");
+  if (keyConfigured) {
+    if (!keyValidated || envKey) {
+      writeStatus("Validating Gemini API key");
+      await validateGeminiConnection({ apiKey: envKey || savedKey });
+    }
+    writeSuccess("Gemini API key is valid and ready to use.");
+  }
   else writeWarning("Gemini API key was skipped. Run `queryra config --replace-key` or set QUERYRA_GEMINI_API_KEY before using `queryra ask`.");
 
   const currentDirectory = process.cwd();
@@ -88,8 +101,10 @@ async function configCommand(args) {
     writeStatus("Credential setup");
     const key = await promptSecret("Queryra CLI Gemini API key (hidden): ");
     if (!key) throw new CliError("No key entered; saved configuration was unchanged.", 3);
+    writeStatus("Validating Gemini API key");
+    await validateGeminiConnection({ apiKey: key });
     await writeConfig({ ...config, geminiApiKey: key });
-    writeSuccess("Gemini API key replaced in user-local config.");
+    writeSuccess("Gemini API key validated and replaced in user-local config.");
     return;
   }
   if (operation === "--remove-key") {

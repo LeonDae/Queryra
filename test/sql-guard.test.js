@@ -46,6 +46,7 @@ test("rejects unapproved schemas, relations, and side-effecting functions", () =
   expectRejected("SELECT * FROM payroll", /not available/i);
   expectRejected("WITH payroll AS (SELECT 1) SELECT * FROM public.payroll", /not available/i);
   expectRejected("SELECT pg_catalog.pg_sleep(5)", /not allowed/i);
+  expectRejected("SELECT set_config('app.workspace_id', 'other', true)", /not allowed/i);
   expectRejected("SELECT * FROM users FOR UPDATE", /row-locking/i);
   expectRejected("SELECT * FROM users TABLESAMPLE SYSTEM (10)", /could not be parsed safely/i);
 });
