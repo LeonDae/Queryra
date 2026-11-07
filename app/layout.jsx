@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Queryra — Natural language to SQL for your data",
+  title: "Queryra-AI",
   description: "Explore local CSV files with Queryra CLI or use CSV and Excel workbooks in Queryra Web.",
 };
 

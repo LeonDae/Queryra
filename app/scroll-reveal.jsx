@@ -14,9 +14,22 @@ export default function ScrollReveal() {
         const hero = page.querySelector(".hero-copy");
         if (hero) gsap.fromTo(hero.children, { autoAlpha: 0, y: 30, filter: "blur(8px)" }, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 1, stagger: .13, ease: "power3.out", delay: .12 });
         page.querySelectorAll("main > section:not(.hero-section) .section-kicker, main > section:not(.hero-section) h2, .web-composer-heading, .pathway-card, .usecase-card, .product-walkthrough-row, .quickstart-panel, .faq-item, .docs-content section, .resource-card, .resource-bottom").forEach((element, index) => {
-          gsap.fromTo(element, { autoAlpha: 0, y: 36, filter: "blur(6px)" }, {
-            autoAlpha: 1, y: 0, filter: "blur(0px)", duration: .85, delay: (index % 3) * .07, ease: "power3.out",
-            scrollTrigger: { trigger: element, start: "top 88%", once: true },
+          gsap.fromTo(element, { autoAlpha: 0, y: 30, filter: "blur(5px)" }, {
+            autoAlpha: 1,
+            y: 0,
+            filter: "blur(0px)",
+            duration: .8,
+            delay: (index % 3) * .06,
+            ease: "power3.out",
+            overwrite: "auto",
+            scrollTrigger: {
+              trigger: element,
+              start: "top 88%",
+              end: "bottom 12%",
+              // Replay on either entry direction and reset only after the element
+              // has moved fully out of view, so the next pass animates again.
+              toggleActions: "play reset play reset",
+            },
           });
         });
       });

@@ -1355,3 +1355,6 @@ html { scroll-behavior:smooth; }
 .marketing-site .usecase-section::before {
   display: none;
 }
+
+.footer-credit { padding-top: 13px; color: #8b8b96; font-size: 10px; text-align: center; letter-spacing: .04em; }
+

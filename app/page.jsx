@@ -1,7 +1,7 @@
 import MarketingSite from "./marketing-site.jsx";
 
 export const metadata = {
-  title: "Queryra — Your CSVs. Your questions. SQL in seconds.",
+  title: "Queryra-AI",
   description: "Explore CSV and Excel data with Queryra Web, or run natural-language questions against local CSVs with Queryra CLI.",
 };
 
