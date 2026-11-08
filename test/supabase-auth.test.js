@@ -82,7 +82,7 @@ test("reader role checks require read-only defaults and no public write privileg
 });
 
 test("ingestion role checks reject inherited privileges and role memberships", () => {
-  const safeIngest = [{ rolsuper: false, rolbypassrls: false, rolinherit: false, inherited_bypass: false, role_memberships: false }];
+  const safeIngest = [{ rolsuper: false, rolbypassrls: false, rolinherit: false, inherited_bypass: false, role_memberships: false, public_usage: true, public_create: true }];
   assert.equal(isSafeIngestionRole(safeIngest), true);
   assert.equal(isSafeIngestionRole([{ ...safeIngest[0], rolinherit: true }]), false);
   assert.equal(isSafeIngestionRole([{ ...safeIngest[0], role_memberships: true }]), false);

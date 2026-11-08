@@ -14,6 +14,7 @@
 | `DATABASE_LOCAL_ADMIN_URL` | Required for local CSV upload | Separate `queryra_ingest` local URL. It must be non-superuser and no-BYPASSRLS; it can create CSV tables and is subject to their forced RLS policies. |
 | `DATABASE_READER_URL` | Required when `DATABASE_TARGET=hosted` | Hosted PostgreSQL URI for a separately provisioned, non-superuser, non-`BYPASSRLS` role with SELECT on intended workspace datasets and metadata needed by Queryra. Obtain it from Supabase Connect after manually provisioning the role. |
 | `DATABASE_ADMIN_URL` | Required when `DATABASE_TARGET=hosted` and CSV upload is enabled | Distinct restricted ingestion role, no superuser or `BYPASSRLS`; it creates workspace-prefixed upload tables and writes only during the CSV route. Obtain it from Supabase Connect after role setup. Never use Supabase's default `postgres` identity. |
+| `DATABASE_SSL_CA_FILE` | Required for hosted Supabase PostgreSQL | Path to the Supabase root CA PEM file, for example `certs/supabase-ca.crt` relative to the app's working directory. Queryra requires this CA and keeps certificate verification enabled for both role pools. |
 | `GOOGLE_API_KEY` | Required only for Gemini generation and Gemini review in hybrid mode | Google AI Studio / Google project credentials. Server-side secret; never prefix with `NEXT_PUBLIC_`. |
 | `GEMINI_MODEL` | Optional | Model identifier available to the key; default `models/gemini-2.5-flash`. |
 | `OLLAMA_BASE_URL` | Optional | Ollama endpoint reachable by the Next server; default `http://127.0.0.1:11434`. |
@@ -28,7 +29,7 @@
 | `GEMINI_REQUESTS_PER_MINUTE` | Optional | Process-local request cap; default 20. |
 | `OLLAMA_REQUESTS_PER_MINUTE` | Optional | Process-local request cap; default 20. |
 | `PROVIDER_CONCURRENCY` | Optional | Per-process provider concurrency; default 2. |
-| `CSV_UPLOADS_PER_10_MINUTES` | Optional | Process-local upload cap; default 3. |
+| `CSV_UPLOADS_PER_10_MINUTES` | Optional | Process-local cap per workspace for upload and workbook-inspection attempts; default 20 per 10 minutes. |
 | `PGSSL` | Optional | Leave blank for normal TLS behavior. `disable` is for trusted local PostgreSQL only. |
 | `QUERYRA_POSTGRES_PASSWORD` | Compose only | Password for the local Compose owner; development only. Never reuse outside local. |
 | `QUERYRA_POSTGRES_READER_PASSWORD` | Required for local Compose role initialization | Generated local-only password for `queryra_reader`; use URL-safe characters so it can appear in the local connection URL without encoding ambiguity. |
@@ -52,7 +53,7 @@ This command is for you to run manually after reviewing it; it was not run as pa
 
 ## Hosted database selection
 
-To intentionally use hosted PostgreSQL, set `DATABASE_TARGET=hosted` and provide both `DATABASE_READER_URL` and `DATABASE_ADMIN_URL`. `DATABASE_URL` remains local and is never a hosted fallback. The reader and ingestion credentials are server-only. The health endpoint reports a sanitized connection status and checks the reader role is not superuser/`BYPASSRLS`; it does not prove all grants or RLS policies are correct.
+To intentionally use hosted PostgreSQL, set `DATABASE_TARGET=hosted` and provide both `DATABASE_READER_URL` and `DATABASE_ADMIN_URL`. For Supabase PostgreSQL, save its root CA certificate as a PEM file and set `DATABASE_SSL_CA_FILE` to that file's path (for example, `certs/supabase-ca.crt`). Queryra loads it for each pool and verifies the server certificate; missing or unreadable CA configuration prevents the connection. `DATABASE_URL` remains local and is never a hosted fallback. The reader and ingestion credentials are server-only. The health endpoint reports a sanitized connection status and checks the reader role is not superuser/`BYPASSRLS`; it does not prove all grants or RLS policies are correct.
 
 Before hosted CSV/query use, apply the reviewed `supabase/migrations/20261025000100_queryra_workspaces.sql` manually, provision different restricted Postgres roles, grant reader access and ingestion privileges/default privileges, and verify RLS behavior. Queryra does not create roles or apply migrations. The migration has not been executed. Do not use a service-role key.
 

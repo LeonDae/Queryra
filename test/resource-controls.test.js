@@ -11,6 +11,27 @@ test("applies a process-local fixed-window request limit", () => {
   delete process.env[variable];
 });
 
+test("permits consecutive uploads per workspace and enforces the configured cap independently", () => {
+  const variable = "QUERYRA_TEST_UPLOAD_LIMIT";
+  const previous = process.env[variable];
+  process.env[variable] = "20";
+  const firstWorkspace = `upload-workspace-a-${Date.now()}`;
+  const secondWorkspace = `upload-workspace-b-${Date.now()}`;
+  try {
+    for (let upload = 0; upload < 20; upload += 1) {
+      assert.equal(consumeRateLimit(`csv-upload:${firstWorkspace}`, variable, 20, 10 * 60_000, 100).remaining, 19 - upload);
+    }
+    assert.throws(
+      () => consumeRateLimit(`csv-upload:${firstWorkspace}`, variable, 20, 10 * 60_000, 100),
+      (error) => error.status === 429 && error.code === "LOCAL_RATE_LIMITED" && /request limit for the current window/.test(error.message),
+    );
+    assert.equal(consumeRateLimit(`csv-upload:${secondWorkspace}`, variable, 20, 10 * 60_000, 100).remaining, 19);
+  } finally {
+    if (previous === undefined) delete process.env[variable];
+    else process.env[variable] = previous;
+  }
+});
+
 test("rejects excess concurrent work and releases the slot after completion", async () => {
   const variable = "QUERYRA_TEST_CONCURRENCY";
   process.env[variable] = "1";

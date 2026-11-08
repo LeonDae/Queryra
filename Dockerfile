@@ -20,12 +20,18 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    DATABASE_SSL_CA_FILE=/app/certs/supabase-ca.crt
 RUN groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs nextjs
+  && useradd --system --uid 1001 --gid nodejs nextjs \
+  && mkdir -p /app/certs \
+  && chown nextjs:nodejs /app/certs \
+  && chmod 755 /app/certs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --chown=nextjs:nodejs certs/supabase-ca.crt ./certs/supabase-ca.crt
+RUN chmod 644 ./certs/supabase-ca.crt
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]

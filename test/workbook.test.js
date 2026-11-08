@@ -28,7 +28,11 @@ function fakeDb() {
     async query(sql, values) { calls.push({ sql, values }); return { rows: [] }; },
     release() {},
   };
-  return { calls, getDbPool(role) { assert.equal(role, "admin"); return { connect: async () => client }; } };
+  return {
+    calls,
+    async getRoleName(role) { assert.equal(role, "reader"); return "queryra_reader"; },
+    getDbPool(role) { assert.equal(role, "admin"); return { connect: async () => client }; },
+  };
 }
 
 test("workbook sheet discovery returns worksheet names from a real XLSX payload", async () => {
@@ -50,8 +54,9 @@ test("selected worksheet is converted and ingested through the existing transact
   });
   const db = fakeDb();
   const result = await uploadWorkbook(file, "Sales", "quarterly_sales", workspaceId, {
-    assertRole: async (role) => assert.equal(role, "admin"),
+    assertRole: async (role) => assert.ok(["reader", "admin"].includes(role)),
     getDbPool: db.getDbPool,
+    getRoleName: db.getRoleName,
     getTables: async () => [],
   });
   assert.equal(result.dataset.table_name, workspaceTableName(workspaceId, "quarterly_sales").table);

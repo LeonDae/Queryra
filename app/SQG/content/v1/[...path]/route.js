@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkDatabaseHealth, deleteTable, executeSelect, getSchemaMetadata, getTableNames } from "../../../../../lib/db.js";
+import { checkDatabaseHealth, deleteTable, ensureWorkspaceReaderAccess, executeSelect, getWorkspaceSchemaMetadata, getWorkspaceTableNames } from "../../../../../lib/db.js";
 import { HttpError } from "../../../../../lib/http-error.js";
 import { MAX_CSV_BYTES, parseCsvData, uploadCsv } from "../../../../../lib/csv.js";
 import { getWorkbookSheetNames, uploadWorkbook, workbookToCsv } from "../../../../../lib/workbook.js";
@@ -85,8 +85,8 @@ export async function GET(_request, context) {
     if (endpoint === "health") {
       return json(await checkDatabaseHealth());
     }
-    if (endpoint === "tables") { const { workspaceId } = await requireWorkspace(); return json({ tables: await getTableNames(workspaceId) }); }
-    if (endpoint === "schema") { const { workspaceId } = await requireWorkspace(); return json({ schema_text: await getSchemaMetadata(undefined, workspaceId) }); }
+    if (endpoint === "tables") { const { workspaceId } = await requireWorkspace(); return json({ tables: await getWorkspaceTableNames(workspaceId) }); }
+    if (endpoint === "schema") { const { workspaceId } = await requireWorkspace(); return json({ schema_text: await getWorkspaceSchemaMetadata(undefined, workspaceId) }); }
     return json({ detail: "Not found." }, 404);
   } catch (error) { return errorResponse(error); }
 }
@@ -172,7 +172,7 @@ export async function POST(request, context) {
 
     const { workspaceId } = await requireWorkspace();
     if (endpoint === "upload-csv") {
-      consumeRateLimit("csv-upload", "CSV_UPLOADS_PER_10_MINUTES", 3, 10 * 60_000, 100);
+      consumeRateLimit(`csv-upload:${workspaceId}`, "CSV_UPLOADS_PER_10_MINUTES", 20, 10 * 60_000, 100);
       const form = await readForm(request);
       const tableName = form.get("table_name");
       if (tableName !== null && typeof tableName !== "string") throw new HttpError(400, "table_name must be a text field.", "INVALID_REQUEST");
@@ -188,7 +188,7 @@ export async function POST(request, context) {
     }
     if (endpoint === "workbook-sheets") {
       const form = await readForm(request);
-      consumeRateLimit("workbook-inspection", "CSV_UPLOADS_PER_10_MINUTES", 3, 10 * 60_000, 100);
+      consumeRateLimit(`workbook-inspection:${workspaceId}`, "CSV_UPLOADS_PER_10_MINUTES", 20, 10 * 60_000, 100);
       const worksheets = await withConcurrencyLimit(
         "workbook-parse",
         "DB_INGEST_CONCURRENCY",
@@ -200,7 +200,7 @@ export async function POST(request, context) {
       return json({ worksheets });
     }
     if (endpoint === "upload-workbook") {
-      consumeRateLimit("csv-upload", "CSV_UPLOADS_PER_10_MINUTES", 3, 10 * 60_000, 100);
+      consumeRateLimit(`csv-upload:${workspaceId}`, "CSV_UPLOADS_PER_10_MINUTES", 20, 10 * 60_000, 100);
       const form = await readForm(request);
       const worksheetName = form.get("worksheet_name");
       const tableName = form.get("table_name");
@@ -254,6 +254,7 @@ export async function POST(request, context) {
 
     if (endpoint === "generate-sql") {
       const input = generateRequestSchema.parse(body);
+      await ensureWorkspaceReaderAccess(workspaceId);
       const schema = await resolveSchema(input, workspaceId);
       if (schema.length > 100_000) throw new HttpError(413, "Schema context exceeds the configured size limit.", "SCHEMA_TOO_LARGE");
       const generated = await generateSql(input.question, schema, input.pipeline);
@@ -270,6 +271,7 @@ export async function POST(request, context) {
     if (endpoint === "feedback") {
       const input = feedbackRequestSchema.parse(body);
       if (input.satisfied) return json({ message: "Feedback received. No regeneration required.", regeneratedSQL: null });
+      await ensureWorkspaceReaderAccess(workspaceId);
       const schema = await resolveSchema(input, workspaceId);
       if (schema.length > 100_000) throw new HttpError(413, "Schema context exceeds the configured size limit.", "SCHEMA_TOO_LARGE");
       const regenerated = await regenerateSql(input.originalQuestion, input.generatedSQL, input.feedback, schema);

@@ -8,12 +8,16 @@ The app verifies that each selected direct PostgreSQL role is neither a superuse
 
 The repeatable local role setup is `db/init-local-roles.sql`, mounted into the local PostgreSQL container. The exact roles are `queryra_reader` and `queryra_ingest`:
 
-- `queryra_reader`: `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOINHERIT`, no role memberships, no database/schema create privilege, transaction-read-only by default, and a 15-second statement timeout. It has `USAGE` on `public` and `SELECT` only on existing `qr_<32-hex-workspace-id>_...` tables. Default privileges grant it SELECT on future tables created by `queryra_ingest`. No table/sequence write grants are made.
+- `queryra_reader`: `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOINHERIT`, no role memberships, no database/schema create privilege, transaction-read-only by default, and a 15-second statement timeout. It has `USAGE` on `public` and `SELECT` only on authorized workspace tables. Queryra grants it SELECT on a newly uploaded table only when the ingestion role owns that workspace-prefixed table and both RLS and FORCE RLS are enabled. Query generation also repairs that narrow grant for existing eligible uploads. No table/sequence write grants are made.
 - `queryra_ingest`: distinct `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, `NOINHERIT`, and no role memberships. It has `CONNECT`, `USAGE` and `CREATE` on `public`, but no grants on pre-existing tables. It owns CSV tables it creates; Queryra applies `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY`, and a workspace-context policy within the same transaction.
 
 The `public` schema's `CREATE` grant is necessary because the current CSV code creates tables there. The local bootstrap revokes legacy `CREATE` from `PUBLIC` so it cannot leak to the reader; the database owner retains its ownership privileges. Consequently, the ingestion login can create objects and alter/drop objects it owns; the app never gives user-generated SQL this login. SQL grants cannot constrain `CREATE` to only CSV table names, so fully narrowing ingestion requires changing the upload architecture (for example, controlled per-workspace schemas or a carefully scoped database function). New local-only passwords are passed through `QUERYRA_POSTGRES_READER_PASSWORD` and `QUERYRA_POSTGRES_INGEST_PASSWORD`; neither is stored in the SQL file. Compose requires both and builds the app's role URLs from them. Use different, strong URL-safe strings. For `npm run dev`, set `DATABASE_LOCAL_READER_URL` and `DATABASE_LOCAL_ADMIN_URL` to the same role credentials with host `127.0.0.1` and the configured local port.
 
 Postgres initialization scripts run only for a new empty data directory. For an existing volume, do not remove or reset it: after adding both passwords to `.env.local`, manually rerun the mounted script with the documented `docker compose ... psql -f /docker-entrypoint-initdb.d/10-queryra-roles.sql` command in `docs/environment-setup.md`. This resets only the two Queryra role passwords/attributes/memberships and their grants/default privileges; it does not drop or rewrite table data. No database command was run for this task.
+
+## Hosted Supabase TLS
+
+For hosted Supabase PostgreSQL connections, save the Supabase root CA certificate as a PEM file and set `DATABASE_SSL_CA_FILE` to its path (for example, `certs/supabase-ca.crt`, relative to the app's working directory). Queryra reads the file when creating each role pool and passes it to PostgreSQL with certificate verification enabled. A missing, unreadable, or non-PEM certificate stops pool setup with a sanitized configuration error. Do not disable TLS or certificate verification for hosted connections. Local PostgreSQL behavior is unchanged.
 
 ## Supabase Auth vs database authorization
 
@@ -41,10 +45,10 @@ Applying through SQL Editor does not record the file in Supabase CLI migration h
 Then provision two separate PostgreSQL login roles through the supported Supabase database role workflow:
 
 - Reader role: `NOSUPERUSER NOBYPASSRLS`, read-only, with `USAGE` on `public`, SELECT on authorized tables, and visibility for Queryra's information-schema discovery.
-- Ingestion role: `NOSUPERUSER NOBYPASSRLS`, separate credentials, minimum `USAGE`/`CREATE` and insert/create privileges required for CSV tables. It is the owner of tables it creates; `FORCE ROW LEVEL SECURITY` makes the owner subject to those table policies.
+- Ingestion role: `NOSUPERUSER NOBYPASSRLS`, separate credentials, and only `CONNECT` on the database plus `USAGE`/`CREATE` on `public`. It owns each table it creates, so ownership permits the required `ALTER TABLE`, RLS policy creation, and inserts without grants on pre-existing tables. `FORCE ROW LEVEL SECURITY` keeps the owner subject to the new table's policy.
 - Configure default privileges for the ingestion table owner to grant SELECT to the reader on future upload tables. Confirm that the reader is not the table owner and neither role inherits a bypass role.
 
-The application does not create these database roles, passwords, grants, or default privileges. The following is a review template, not an executed migration; replace the database name and enter newly generated passwords only in the Supabase SQL editor/secure administration workflow:
+The application does not create database roles, passwords, schema privileges, or default privileges. It grants only per-table SELECT to the configured reader for eligible workspace uploads as described above. The following is a review template, not an executed migration; replace the database name and enter newly generated passwords only in the Supabase SQL editor/secure administration workflow:
 
 ```sql
 -- Provision roles before setting DATABASE_TARGET=hosted.

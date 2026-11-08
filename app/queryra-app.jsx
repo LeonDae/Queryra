@@ -45,6 +45,13 @@ async function getApiError(response) {
   }
 }
 
+function getTableColumnCount(schemaText, tableName) {
+  const statement = schemaText
+    .split("\n\n")
+    .find((item) => item.startsWith(`CREATE TABLE ${tableName} (`));
+  return statement ? (statement.match(/^\s{2}[^;\n]+/gm) || []).length : null;
+}
+
 const EXAMPLE_QUERIES = [
   "Show top 5 transactions sorted by total amount",
   "What is the average transaction value by region?",
@@ -65,6 +72,8 @@ export default function QueryraApp({ initialUser }) {
   // -------- Data State --------
   const [schema, setSchema] = useState("");
   const [availableTables, setAvailableTables] = useState([]);
+  const [tablesLoading, setTablesLoading] = useState(true);
+  const [tableListError, setTableListError] = useState("");
   const [sql, setSql] = useState("");
   const [rows, setRows] = useState([]);
   const [executionMeta, setExecutionMeta] = useState(null);
@@ -77,6 +86,7 @@ export default function QueryraApp({ initialUser }) {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvUploadResult, setCsvUploadResult] = useState(null);
   const csvFileInputRef = useRef(null);
+  const csvUploadInFlightRef = useRef(false);
 
   // -------- Error & Feedback State --------
   const [error, setError] = useState("");
@@ -93,13 +103,22 @@ export default function QueryraApp({ initialUser }) {
   );
 
   async function loadWorkspaceTables() {
+    setTablesLoading(true);
     try {
       const data = await apiGet("/tables");
       setAvailableTables(data.tables || []);
+      setTableListError("");
+    } catch {
+      setTableListError("Workspace tables could not be loaded. Try refreshing the page.");
+    } finally {
+      setTablesLoading(false);
+    }
+
+    try {
       const schemaData = await apiGet("/schema");
       setSchema(schemaData.schema_text || "");
     } catch {
-      setAvailableTables([]);
+      // Table visibility is independent of schema inspection availability.
       setSchema("");
     }
   }
@@ -138,11 +157,13 @@ export default function QueryraApp({ initialUser }) {
       const res = await apiPost("/delete-table", { tableName });
       setAvailableTables(res.tables || []);
       setSchema(res.schema_text || "");
+      setTableListError("");
       const cleanName = tableName.replace(/^qr_[a-f0-9]+_/, "");
       setTableActionMessage(`Table "${cleanName}" removed from workspace.`);
       setTimeout(() => setTableActionMessage(""), 4000);
       setTableToDelete(null);
-      if (!res.tables || res.tables.length === 0) {
+      if (csvUploadResult?.table_name === tableName) setCsvUploadResult(null);
+      if (sql.toLowerCase().includes(tableName.toLowerCase())) {
         setRows([]);
         setSql("");
         setExecutionMeta(null);
@@ -158,6 +179,7 @@ export default function QueryraApp({ initialUser }) {
      FILE HANDLING
      ============================ */
   async function handleFileSelected(file) {
+    if (csvUploadInFlightRef.current) return;
     if (!file) return;
     setError("");
     setCsvUploadResult(null);
@@ -178,6 +200,8 @@ export default function QueryraApp({ initialUser }) {
       return;
     }
 
+    setWorksheets([]);
+    setSelectedWorksheet("");
     setCsvFile(file);
 
     // If Excel, inspect worksheets
@@ -199,12 +223,14 @@ export default function QueryraApp({ initialUser }) {
   }
 
   async function handleUploadAndIndex() {
+    if (csvUploadInFlightRef.current) return;
     if (!csvFile) {
       setError("Please choose a CSV or Excel file first.");
       csvFileInputRef.current?.click();
       return;
     }
 
+    csvUploadInFlightRef.current = true;
     setCsvUploading(true);
     setError("");
     setCsvUploadResult(null);
@@ -231,6 +257,7 @@ export default function QueryraApp({ initialUser }) {
 
       setSchema(res.schema_text || "");
       setAvailableTables(res.tables || []);
+      setTableListError("");
       setCsvUploadResult(res);
       setCsvFile(null);
       setCsvTableName("");
@@ -240,6 +267,7 @@ export default function QueryraApp({ initialUser }) {
     } catch (err) {
       setError(err.message || "Dataset ingestion failed.");
     } finally {
+      csvUploadInFlightRef.current = false;
       setCsvUploading(false);
     }
   }
@@ -490,10 +518,12 @@ export default function QueryraApp({ initialUser }) {
             </div>
             <div>
               <div className="text-xs font-bold text-slate-900 uppercase tracking-wide">
-                {hasDatasets ? "Active Datasets" : "No Datasets Loaded"}
+                {tablesLoading ? "Loading Datasets" : hasDatasets ? "Active Datasets" : "No Datasets Loaded"}
               </div>
               <div className="text-[11px] text-slate-500">
-                {hasDatasets
+                {tablesLoading
+                  ? "Checking workspace tables"
+                  : hasDatasets
                   ? "Schema indexed & ready to query"
                   : "Upload a file or deploy in Schema Studio"}
               </div>
@@ -547,6 +577,7 @@ export default function QueryraApp({ initialUser }) {
                 <input
                   ref={csvFileInputRef}
                   type="file"
+                  disabled={csvUploading}
                   accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   onChange={(e) => {
                     const selectedFile = e.target.files?.[0] || null;
@@ -583,10 +614,11 @@ export default function QueryraApp({ initialUser }) {
                     </span>
                     <button
                       type="button"
-                      onClick={() => { setCsvFile(null); setWorksheets([]); if (csvFileInputRef.current) csvFileInputRef.current.value = ""; }}
+                      onClick={() => { setCsvFile(null); setWorksheets([]); setSelectedWorksheet(""); if (csvFileInputRef.current) csvFileInputRef.current.value = ""; }}
+                      disabled={csvUploading}
                       className="text-slate-400 hover:text-rose-500 text-xs font-bold px-1"
                     >
-                      Remove
+                      Remove pending file
                     </button>
                   </div>
 
@@ -650,6 +682,163 @@ export default function QueryraApp({ initialUser }) {
               )}
             </div>
 
+            {/* Active Workspace Tables & Schema Inspector */}
+            <div className="qr-workspace-table-panel bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                    <svg className="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <ellipse cx="12" cy="5" rx="9" ry="3" />
+                      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                    </svg>
+                    Workspace Tables ({availableTables.length})
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setSchemaOpen(!schemaOpen)}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 active:scale-95"
+                  >
+                    {schemaOpen ? (
+                      <>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="18 15 12 9 6 15" />
+                        </svg>
+                        Hide Blueprint
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                        Inspect Blueprint
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Table Removal Notification Banner */}
+                {tableActionMessage && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-medium flex items-center justify-between qr-animate-fade">
+                    <span>✓ {tableActionMessage}</span>
+                    <button
+                      type="button"
+                      onClick={() => setTableActionMessage("")}
+                      className="text-emerald-600 hover:text-emerald-900 ml-2"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Table Rows with Delete Option */}
+                <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-0.5">
+                  {tablesLoading ? (
+                    <p className="text-xs text-slate-500">Loading workspace tables…</p>
+                  ) : tableListError ? (
+                    <p className="text-xs text-rose-700" role="status">{tableListError}</p>
+                  ) : availableTables.length === 0 ? (
+                    <p className="text-xs text-slate-500">No uploaded tables in this workspace yet.</p>
+                  ) : availableTables.map((tbl) => {
+                    const cleanName = tbl.replace(/^qr_[a-f0-9]+_/, "");
+                    const isDeletingThis = tableToDelete === tbl;
+                    const isLatestUpload = csvUploadResult?.table_name === tbl;
+                    const rowCount = isLatestUpload ? (csvUploadResult.inserted_rows ?? csvUploadResult.dataset?.row_count) : null;
+                    const columnCount = getTableColumnCount(schema, tbl) ?? (isLatestUpload ? csvUploadResult.columns?.length : null);
+
+                    if (isDeletingThis) {
+                      return (
+                        <div
+                          key={tbl}
+                          className="p-3 rounded-xl bg-rose-50 border border-rose-200/80 text-xs flex flex-col gap-2 qr-animate-fade"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-900">
+                              Delete table &quot;{cleanName}&quot;?
+                            </span>
+                            <span className="text-[11px] text-rose-600 font-medium">Irreversible</span>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setTableToDelete(null)}
+                              disabled={deletingTable}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-200/60 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTable(tbl)}
+                              disabled={deletingTable}
+                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
+                            >
+                              {deletingTable ? "Deleting…" : "Confirm Delete"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={tbl}
+                        className="qr-workspace-table-row px-3.5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/70 border border-slate-200/80 text-xs font-mono text-slate-700 flex items-center justify-between group transition-all duration-200"
+                      >
+                        <div className="flex items-center gap-2 truncate mr-2">
+                          <svg className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <line x1="3" y1="9" x2="21" y2="9" />
+                            <line x1="9" y1="21" x2="9" y2="9" />
+                          </svg>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-slate-900 truncate block">{cleanName}</span>
+                            {(rowCount != null || columnCount != null) && (
+                              <span className="font-sans text-[10px] text-slate-500">
+                                {rowCount != null ? `${rowCount} rows` : ""}
+                                {rowCount != null && columnCount != null ? " · " : ""}
+                                {columnCount != null ? `${columnCount} columns` : ""}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setTableToDelete(tbl)}
+                            title={`Delete table ${cleanName}`}
+                            aria-label={`Delete table ${cleanName}`}
+                            className="px-2 py-1 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 transition-colors font-sans font-semibold"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Expandable Schema Blueprint Viewer */}
+                {schemaOpen && (
+                  <div className="flex flex-col gap-1.5 qr-animate-fade">
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
+                      <span>Relational Schema Blueprint</span>
+                      <span className="font-mono text-xs text-slate-400">SQL Schema</span>
+                    </div>
+                    <pre className="p-3.5 rounded-xl bg-slate-950 text-slate-300 font-mono text-xs leading-relaxed max-h-48 overflow-auto border border-slate-800 select-text">
+                      {schema || "-- No blueprint metadata found."}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Link to Schema Studio */}
+                <Link
+                  href="/schema-studio"
+                  className="pt-2 text-xs font-semibold text-slate-600 hover:text-indigo-600 flex items-center gap-1.5 transition-colors border-t border-slate-100 group"
+                >
+                  <span>Build custom table architectures in Schema Studio</span>
+                  <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                </Link>
+              </div>
             {/* Processing Engine Card */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col gap-4">
               <div className="flex items-center gap-2">
@@ -711,155 +900,6 @@ export default function QueryraApp({ initialUser }) {
                 </button>
               </div>
             </div>
-
-            {/* Active Workspace Tables & Schema Inspector */}
-            {hasDatasets && (
-              <div className="qr-workspace-table-panel bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                    <svg className="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <ellipse cx="12" cy="5" rx="9" ry="3" />
-                      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                    </svg>
-                    Workspace Tables ({availableTables.length})
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setSchemaOpen(!schemaOpen)}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 active:scale-95"
-                  >
-                    {schemaOpen ? (
-                      <>
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="18 15 12 9 6 15" />
-                        </svg>
-                        Hide Blueprint
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                        Inspect Blueprint
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Table Removal Notification Banner */}
-                {tableActionMessage && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-medium flex items-center justify-between qr-animate-fade">
-                    <span>✓ {tableActionMessage}</span>
-                    <button
-                      type="button"
-                      onClick={() => setTableActionMessage("")}
-                      className="text-emerald-600 hover:text-emerald-900 ml-2"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-
-                {/* Table Rows with Delete Option */}
-                <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-0.5">
-                  {availableTables.map((tbl) => {
-                    const cleanName = tbl.replace(/^qr_[a-f0-9]+_/, "");
-                    const isDeletingThis = tableToDelete === tbl;
-
-                    if (isDeletingThis) {
-                      return (
-                        <div
-                          key={tbl}
-                          className="p-3 rounded-xl bg-rose-50 border border-rose-200/80 text-xs flex flex-col gap-2 qr-animate-fade"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-rose-900">
-                              Remove table &quot;{cleanName}&quot;?
-                            </span>
-                            <span className="text-[11px] text-rose-600 font-medium">Irreversible</span>
-                          </div>
-                          <div className="flex items-center justify-end gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={() => setTableToDelete(null)}
-                              disabled={deletingTable}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-200/60 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTable(tbl)}
-                              disabled={deletingTable}
-                              className="px-3 py-1 rounded-lg text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
-                            >
-                              {deletingTable ? "Removing…" : "Confirm Remove"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={tbl}
-                        className="qr-workspace-table-row px-3.5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/70 border border-slate-200/80 text-xs font-mono text-slate-700 flex items-center justify-between group transition-all duration-200"
-                      >
-                        <div className="flex items-center gap-2 truncate mr-2">
-                          <svg className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <line x1="3" y1="9" x2="21" y2="9" />
-                            <line x1="9" y1="21" x2="9" y2="9" />
-                          </svg>
-                          <span className="font-semibold text-slate-900 truncate">{cleanName}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-[11px] font-sans font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
-                            Active
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setTableToDelete(tbl)}
-                            title={`Remove table ${cleanName}`}
-                            aria-label={`Remove table ${cleanName}`}
-                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all active:scale-90"
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M3 6h18" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Expandable Schema Blueprint Viewer */}
-                {schemaOpen && (
-                  <div className="flex flex-col gap-1.5 qr-animate-fade">
-                    <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-                      <span>Relational Schema Blueprint</span>
-                      <span className="font-mono text-xs text-slate-400">SQL Schema</span>
-                    </div>
-                    <pre className="p-3.5 rounded-xl bg-slate-950 text-slate-300 font-mono text-xs leading-relaxed max-h-48 overflow-auto border border-slate-800 select-text">
-                      {schema || "-- No blueprint metadata found."}
-                    </pre>
-                  </div>
-                )}
-
-                {/* Link to Schema Studio */}
-                <Link
-                  href="/schema-studio"
-                  className="pt-2 text-xs font-semibold text-slate-600 hover:text-indigo-600 flex items-center gap-1.5 transition-colors border-t border-slate-100 group"
-                >
-                  <span>Build custom table architectures in Schema Studio</span>
-                  <span className="group-hover:translate-x-0.5 transition-transform">→</span>
-                </Link>
-              </div>
-            )}
 
           </aside>
 
