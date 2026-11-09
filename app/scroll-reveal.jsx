@@ -9,6 +9,17 @@ export default function ScrollReveal() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
 
     gsap.registerPlugin(ScrollTrigger);
+    let refreshFrame = null;
+    const scheduleRefresh = () => {
+      if (refreshFrame !== null) window.cancelAnimationFrame(refreshFrame);
+      refreshFrame = window.requestAnimationFrame(() => {
+        refreshFrame = null;
+        ScrollTrigger.refresh();
+      });
+    };
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleRefresh);
+    document.querySelectorAll(".web-composer-panel").forEach((panel) => resizeObserver?.observe(panel));
+
     const context = gsap.context(() => {
       document.querySelectorAll(".marketing-site, .docs-page, .resources-page").forEach((page) => {
         const hero = page.querySelector(".hero-copy");
@@ -26,9 +37,9 @@ export default function ScrollReveal() {
               trigger: element,
               start: "top 88%",
               end: "bottom 12%",
-              // Replay on either entry direction and reset only after the element
-              // has moved fully out of view, so the next pass animates again.
-              toggleActions: "play reset play reset",
+              // Keep content visible after its first reveal so scrolling back
+              // through a dynamic page never leaves sections hidden.
+              toggleActions: "play none none none",
             },
           });
         });
@@ -36,7 +47,11 @@ export default function ScrollReveal() {
       ScrollTrigger.refresh();
     });
 
-    return () => context.revert();
+    return () => {
+      if (refreshFrame !== null) window.cancelAnimationFrame(refreshFrame);
+      resizeObserver?.disconnect();
+      context.revert();
+    };
   }, []);
 
   return null;

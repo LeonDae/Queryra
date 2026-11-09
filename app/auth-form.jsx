@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "../lib/supabase/client.js";
+import { getAuthCallbackUrl, safeRedirectPath } from "../lib/supabase/redirects.js";
 
 export default function AuthForm({ mode }) {
   const router = useRouter();
@@ -28,12 +29,12 @@ export default function AuthForm({ mode }) {
       }
       if (signup && password !== confirmation) { setError("Your passwords do not match. Check both fields and try again."); return; }
       const result = signup
-        ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=%2Fworkspace` } })
+        ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: getAuthCallbackUrl(process.env.NEXT_PUBLIC_SITE_URL, window.location.origin) } })
         : await supabase.auth.signInWithPassword({ email, password });
       if (result.error) throw result.error;
       if (signup && !result.data.session) { setMessage("Check your email to confirm your account, then return here to sign in."); return; }
       const next = search.get("next");
-      router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/workspace"); router.refresh();
+      router.replace(safeRedirectPath(next)); router.refresh();
     } catch (cause) {
       const detail = cause?.message || "";
       if (detail.includes("NEXT_PUBLIC_SUPABASE_URL") || detail.includes("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY")) setError(detail);

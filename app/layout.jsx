@@ -1,4 +1,5 @@
 import "./globals.css";
+import FooterCredit from "./footer-credit.jsx";
 
 export const metadata = {
   title: "Queryra-AI",
@@ -13,7 +14,10 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Overpass:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <FooterCredit />
+      </body>
     </html>
   );
 }

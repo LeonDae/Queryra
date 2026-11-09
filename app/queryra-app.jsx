@@ -1166,10 +1166,10 @@ export default function QueryraApp({ initialUser }) {
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-200 max-h-[380px] scrollbar-thin">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 scrollbar-thin">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-slate-50/90 border-b border-slate-200 sticky top-0 z-10">
+                      <tr className="bg-slate-50/90 border-b border-slate-200">
                         {Object.keys(rows[0]).map((key) => (
                           <th key={key} className="px-4 py-3 font-mono font-bold text-slate-600 uppercase tracking-wider text-[11px] whitespace-nowrap">
                             {key}

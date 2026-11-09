@@ -34,7 +34,7 @@ test("landing page omits release and scroll prompts and enlarges the nav logo", 
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
 
-test("auth navigation stays inside Queryra and callbacks redirect to the request origin", () => {
+test("auth navigation stays inside Queryra and callbacks use the configured site origin", () => {
   const site = source("../app/marketing-site.jsx");
   const docs = source("../app/docs/page.jsx");
   const authForm = source("../app/auth-form.jsx");
@@ -43,8 +43,10 @@ test("auth navigation stays inside Queryra and callbacks redirect to the request
   assert.match(site, /<Link href="\/login">Log in<\/Link>/);
   assert.match(docs, /href="\/login"/);
   assert.match(authForm, /href=\{signup \? "\/login" : "\/signup"\}/);
-  assert.match(authForm, /emailRedirectTo: `\$\{window\.location\.origin\}\/auth\/callback/);
-  assert.match(callback, /new URL\(error \? "\/login\?error=confirmation" : next, url\.origin\)/);
+  assert.match(authForm, /getAuthCallbackUrl\(process\.env\.NEXT_PUBLIC_SITE_URL, window\.location\.origin\)/);
+  assert.match(callback, /safeRedirectPath\(requested\)/);
+  assert.match(callback, /resolveSiteOrigin\(process\.env\.NEXT_PUBLIC_SITE_URL, url\.origin\)/);
+  assert.match(callback, /new URL\(error \? "\/login\?error=confirmation" : next, origin\)/);
   assert.doesNotMatch(callback, /https?:\/\//);
 });
 
