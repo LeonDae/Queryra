@@ -25,12 +25,14 @@ test("callback and client redirects reject external and backslash-based open red
   assert.equal(safeRedirectPath("https://attacker.example"), "/workspace");
 });
 
-test("dynamic composer resizes refresh scroll positions and reveal animations do not hide content on exit", () => {
+test("dynamic composer resizes refresh scroll positions and reveals replay in both scroll directions", () => {
   const reveal = source("../app/scroll-reveal.jsx");
   assert.match(reveal, /new ResizeObserver\(scheduleRefresh\)/);
   assert.match(reveal, /querySelectorAll\("\.web-composer-panel"\)/);
-  assert.match(reveal, /toggleActions: "play none none none"/);
-  assert.doesNotMatch(reveal, /toggleActions: "play reset play reset"/);
+  assert.match(reveal, /toggleActions: "play reverse play reverse"/);
+  assert.match(reveal, /start: "top 85%"/);
+  assert.match(reveal, /end: "bottom 15%"/);
+  assert.match(reveal, /prefers-reduced-motion: reduce/);
 });
 
 test("workspace query results use document scrolling instead of a nested vertical scroller", () => {

@@ -35,11 +35,10 @@ export default function ScrollReveal() {
             overwrite: "auto",
             scrollTrigger: {
               trigger: element,
-              start: "top 88%",
-              end: "bottom 12%",
-              // Keep content visible after its first reveal so scrolling back
-              // through a dynamic page never leaves sections hidden.
-              toggleActions: "play none none none",
+              start: "top 85%",
+              end: "bottom 15%",
+              // Reverse on exit so each viewport entrance can replay in both directions.
+              toggleActions: "play reverse play reverse",
             },
           });
         });
